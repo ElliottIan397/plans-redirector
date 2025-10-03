@@ -1,17 +1,15 @@
-
----
-
-## (Optional) `middleware.js`
-Only if you want brand-specific fallbacks/logic per domain later. Safe to omit.
-
-```js
 // middleware.js
 import { NextResponse } from 'next/server';
 
 export function middleware(req) {
+  // optional: forward host to routes if you want brand-aware logic later
   const host = req.headers.get('host') || '';
-  // You can branch on host if needed, or just pass it down as a header.
   const res = NextResponse.next();
   res.headers.set('x-brand-host', host);
   return res;
 }
+
+// optional: limit to just our redirect + root (or remove this for site-wide)
+export const config = {
+  matcher: ['/', '/r', '/r/:path*'],
+};
