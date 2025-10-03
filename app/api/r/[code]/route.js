@@ -46,12 +46,39 @@ async function getMapping() {
 
 export async function GET(_req, { params }) {
   const code = (params?.code || '').trim().toUpperCase();
+
+  // --- OPTIONAL: server-side click log to Google Apps Script (or any webhook) ---
+  try {
+    if (process.env.LOG_WEBHOOK_URL) {
+      // If you added a shared secret, also include: secret: process.env.LOG_SECRET
+      fetch(process.env.LOG_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // keep it minimal; no PII
+        body: JSON.stringify({
+          // secret: process.env.LOG_SECRET, // <- uncomment if you implemented the secret
+          code,
+          host: _req.headers.get('host') || '',
+          ref: _req.headers.get('referer') || '',
+          ua: _req.headers.get('user-agent') || '',
+          ts: Date.now()
+        }),
+        // fire-and-forget (don’t wait for response)
+        duplex: 'half'
+      }).catch(() => {});
+    }
+  } catch {}
+
+  // --- existing redirect logic ---
   const mapping = await getMapping();
   const record = mapping[code];
 
   if (!record) {
-    const fallback = process.env.FALLBACK_URL || 'https://plans.reliancegroupusa.com/plan-not-found';
+    const fallback =
+      process.env.FALLBACK_URL || 'https://plans.reliancegroupusa.com/plan-not-found';
     return NextResponse.redirect(fallback, { status: 302 });
   }
+
   return NextResponse.redirect(record.long_url, { status: 301 });
 }
+
