@@ -58,6 +58,7 @@ export async function GET(_req, { params }) {
         body: JSON.stringify({
           // secret: process.env.LOG_SECRET, // <- uncomment if you implemented the secret
           code,
+          msp_name: mspName,                // <<— NEW
           host: _req.headers.get('host') || '',
           ref: _req.headers.get('referer') || '',
           ua: _req.headers.get('user-agent') || '',
