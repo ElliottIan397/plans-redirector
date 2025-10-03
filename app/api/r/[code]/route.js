@@ -1,4 +1,4 @@
-// app/api/r/route.js
+// app/api/r/[code]/route.js
 import { NextResponse } from 'next/server';
 
 function stripOuterQuotes(s = '') {
@@ -9,18 +9,13 @@ function stripOuterQuotes(s = '') {
   return s;
 }
 
-// Simple CSV parser robust to fully-quoted lines/fields (no embedded commas)
+// Robust CSV parser for your quoted rows + BOM
 function parseCSV(csv) {
-  // Strip UTF-8 BOM if present
-  if (csv && csv.charCodeAt(0) === 0xFEFF) csv = csv.slice(1);
-
+  if (csv && csv.charCodeAt(0) === 0xFEFF) csv = csv.slice(1); // strip BOM
   const lines = csv.split(/\r?\n/).filter(l => l.trim().length > 0);
   if (!lines.length) return [];
-
-  // Handle quoted header row
   const rawHeader = stripOuterQuotes(lines[0]);
   const headers = rawHeader.split(',').map(h => stripOuterQuotes(h).trim().toLowerCase());
-
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const rawLine = stripOuterQuotes(lines[i]);
@@ -36,10 +31,8 @@ let mappingCache = null;
 
 async function getMapping() {
   if (mappingCache) return mappingCache;
-
-  const csv = (await import('../../../data/mappings.csv?raw')).default;
+  const csv = (await import('../../../../data/mappings.csv?raw')).default;
   const rows = parseCSV(csv);
-
   const map = {};
   for (const r of rows) {
     const code = (r.code || '').trim().toUpperCase();
@@ -51,10 +44,10 @@ async function getMapping() {
   return mappingCache;
 }
 
-export async function GET(req) {
-  const codeParam = (req.nextUrl.searchParams.get('code') || '').trim().toUpperCase();
+export async function GET(_req, { params }) {
+  const code = (params?.code || '').trim().toUpperCase();
   const mapping = await getMapping();
-  const record = mapping[codeParam];
+  const record = mapping[code];
 
   if (!record) {
     const fallback = process.env.FALLBACK_URL || 'https://plans.reliancegroupusa.com/plan-not-found';
