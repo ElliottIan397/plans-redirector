@@ -1,57 +1,64 @@
-// app/api/r/[code]/route.js
+// app/api/r/route.js
 import { NextResponse } from 'next/server';
 
-// --- Tiny CSV parser (safe for simple CSV without embedded commas) ---
-function parseCSV(csv) {
-  const lines = csv.trim().split(/\r?\n/);
-  if (!lines.length) return [];
-  const headers = lines[0].split(',').map(h => h.trim());
-  return lines.slice(1).map(line => {
-    const cols = line.split(',').map(c => c.trim());
-    const row = {};
-    headers.forEach((h, i) => (row[h] = cols[i] || ''));
-    return row;
-  });
+function stripOuterQuotes(s = '') {
+  s = s.trim();
+  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+    return s.slice(1, -1);
+  }
+  return s;
 }
 
-// Cache mapping across invocations within the same runtime
+// Simple CSV parser robust to fully-quoted lines/fields (no embedded commas)
+function parseCSV(csv) {
+  // Strip UTF-8 BOM if present
+  if (csv && csv.charCodeAt(0) === 0xFEFF) csv = csv.slice(1);
+
+  const lines = csv.split(/\r?\n/).filter(l => l.trim().length > 0);
+  if (!lines.length) return [];
+
+  // Handle quoted header row
+  const rawHeader = stripOuterQuotes(lines[0]);
+  const headers = rawHeader.split(',').map(h => stripOuterQuotes(h).trim().toLowerCase());
+
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const rawLine = stripOuterQuotes(lines[i]);
+    const cols = rawLine.split(',').map(c => stripOuterQuotes(c).trim());
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = cols[idx] ?? ''; });
+    rows.push(row);
+  }
+  return rows;
+}
+
 let mappingCache = null;
 
 async function getMapping() {
   if (mappingCache) return mappingCache;
 
-  // Import CSV as raw string (handled by next.config.js rule)
-  const csv = (await import('../../../..//data/mappings.csv?raw')).default;
+  const csv = (await import('../../../data/mappings.csv?raw')).default;
   const rows = parseCSV(csv);
 
   const map = {};
   for (const r of rows) {
-    if (!r.code || !r.long_url) continue;
-    map[r.code] = { msp_name: r.msp_name || '', long_url: r.long_url };
+    const code = (r.code || '').trim().toUpperCase();
+    const url  = (r.long_url || '').trim();
+    if (!code || !url) continue;
+    map[code] = { msp_name: (r.msp_name || '').trim(), long_url: url };
   }
   mappingCache = map;
   return mappingCache;
 }
 
-export async function GET(_req, { params }) {
-  const code = params?.code || '';
+export async function GET(req) {
+  const codeParam = (req.nextUrl.searchParams.get('code') || '').trim().toUpperCase();
   const mapping = await getMapping();
-  const record = mapping[code];
+  const record = mapping[codeParam];
 
   if (!record) {
-    // Fallback destination if code not found
-    const fallback =
-      process.env.FALLBACK_URL ||
-      'https://plans.reliancegroupusa.com/plan-not-found';
+    const fallback = process.env.FALLBACK_URL || 'https://plans.reliancegroupusa.com/plan-not-found';
     return NextResponse.redirect(fallback, { status: 302 });
   }
-
-  // Optionally append basic UTM tags (kept minimal to avoid "spammy" look)
-  // const url = new URL(record.long_url);
-  // url.searchParams.set('utm_source', 'email');
-  // url.searchParams.set('utm_medium', 'outreach');
-  // url.searchParams.set('utm_campaign', '2yr_plan');
-
-  // Permanent redirect (use 302 if you want to freely change targets later)
   return NextResponse.redirect(record.long_url, { status: 301 });
 }
