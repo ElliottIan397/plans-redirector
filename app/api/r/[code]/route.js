@@ -44,6 +44,9 @@ async function getMapping() {
   return mappingCache;
 }
 
+// app/api/r/[code]/route.js
+import { NextResponse, unstable_after as after } from 'next/server';
+
 export async function GET(_req, { params }) {
   const code = (params?.code || '').trim().toUpperCase();
 
@@ -51,30 +54,32 @@ export async function GET(_req, { params }) {
   const record = mapping[code];
   const mspName = record?.msp_name || '';
 
-  // fire-and-forget log
-  try {
-    if (process.env.LOG_WEBHOOK_URL) {
-      fetch(process.env.LOG_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          // secret: process.env.LOG_SECRET,
-          code,
-          msp_name: mspName,
-          host: _req.headers.get('host') || '',
-          ref: _req.headers.get('referer') || '',
-          ua: _req.headers.get('user-agent') || '',
-          ts: Date.now()
-        })
-      }).then(() => console.log('log_ok', code))
-        .catch(() => console.error('log_fail', code));
-    }
-  } catch {}
+  // Schedule logging to run *after* the response is sent.
+  if (process.env.LOG_WEBHOOK_URL) {
+    after(async () => {
+      try {
+        await fetch(process.env.LOG_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            // secret: process.env.LOG_SECRET,
+            code,
+            msp_name: mspName,
+            host: _req.headers.get('host') || '',
+            ref: _req.headers.get('referer') || '',
+            ua: _req.headers.get('user-agent') || '',
+            ts: Date.now()
+          })
+        });
+      } catch (e) {
+        // Optional: you can’t console.log here reliably post-response, so we ignore errors
+      }
+    });
+  }
 
   if (!record) {
     const fallback = process.env.FALLBACK_URL || 'https://plans.reliancegroupusa.com/plan-not-found';
     return NextResponse.redirect(fallback, { status: 302 });
   }
-
   return NextResponse.redirect(record.long_url, { status: 301 });
 }
