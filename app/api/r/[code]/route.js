@@ -1,5 +1,5 @@
 // app/api/r/[code]/route.js
-import { NextResponse, unstable_after as after } from 'next/server';
+import { NextResponse } from 'next/server';
 
 function stripOuterQuotes(s = '') {
   s = s.trim();
@@ -7,6 +7,7 @@ function stripOuterQuotes(s = '') {
   return s;
 }
 
+// Robust CSV parser for quoted rows + BOM
 function parseCSV(csv) {
   if (csv && csv.charCodeAt(0) === 0xFEFF) csv = csv.slice(1);
   const lines = csv.split(/\r?\n/).filter(l => l.trim().length > 0);
@@ -48,24 +49,27 @@ export async function GET(_req, { params }) {
   const record = mapping[code];
   const mspName = record?.msp_name || '';
 
+  // Await logging so it completes before redirect
   if (process.env.LOG_WEBHOOK_URL) {
-    after(async () => {
-      try {
-        await fetch(process.env.LOG_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            // secret: process.env.LOG_SECRET,
-            code,
-            msp_name: mspName,
-            host: _req.headers.get('host') || '',
-            ref: _req.headers.get('referer') || '',
-            ua: _req.headers.get('user-agent') || '',
-            ts: Date.now()
-          })
-        });
-      } catch {}
-    });
+    try {
+      const res = await fetch(process.env.LOG_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          // secret: process.env.LOG_SECRET,
+          code,
+          msp_name: mspName,
+          host: _req.headers.get('host') || '',
+          ref: _req.headers.get('referer') || '',
+          ua: _req.headers.get('user-agent') || '',
+          ts: Date.now()
+        })
+      });
+      // Optional: debug
+      // if (!res.ok) console.error('log_fail_status', code, res.status, await res.text());
+    } catch {
+      // swallow logging errors; don't block redirect
+    }
   }
 
   if (!record) {
