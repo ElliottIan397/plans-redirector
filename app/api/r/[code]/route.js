@@ -1,17 +1,14 @@
 // app/api/r/[code]/route.js
-import { NextResponse } from 'next/server';
+import { NextResponse, unstable_after as after } from 'next/server';
 
 function stripOuterQuotes(s = '') {
   s = s.trim();
-  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
-    return s.slice(1, -1);
-  }
+  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) return s.slice(1, -1);
   return s;
 }
 
-// Robust CSV parser for your quoted rows + BOM
 function parseCSV(csv) {
-  if (csv && csv.charCodeAt(0) === 0xFEFF) csv = csv.slice(1); // strip BOM
+  if (csv && csv.charCodeAt(0) === 0xFEFF) csv = csv.slice(1);
   const lines = csv.split(/\r?\n/).filter(l => l.trim().length > 0);
   if (!lines.length) return [];
   const rawHeader = stripOuterQuotes(lines[0]);
@@ -44,9 +41,6 @@ async function getMapping() {
   return mappingCache;
 }
 
-// app/api/r/[code]/route.js
-import { NextResponse, unstable_after as after } from 'next/server';
-
 export async function GET(_req, { params }) {
   const code = (params?.code || '').trim().toUpperCase();
 
@@ -54,7 +48,6 @@ export async function GET(_req, { params }) {
   const record = mapping[code];
   const mspName = record?.msp_name || '';
 
-  // Schedule logging to run *after* the response is sent.
   if (process.env.LOG_WEBHOOK_URL) {
     after(async () => {
       try {
@@ -71,9 +64,7 @@ export async function GET(_req, { params }) {
             ts: Date.now()
           })
         });
-      } catch (e) {
-        // Optional: you can’t console.log here reliably post-response, so we ignore errors
-      }
+      } catch {}
     });
   }
 
